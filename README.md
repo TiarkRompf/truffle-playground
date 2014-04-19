@@ -13,7 +13,7 @@ Playing with Truffle in Scala.
 
 ### Running
 
-Grab a (Graal VM binary)[http://lafo.ssw.uni-linz.ac.at/builds/]. I'm using (GraalVM-0.2 OpenJDK-8-b132)[].
+Grab a [Graal VM binary](http://lafo.ssw.uni-linz.ac.at/builds/). I'm using (GraalVM-0.2 OpenJDK-8-b132)[].
 Remember to set `JAVA_HOME`. Use `sbt` to compile and run.
 
 ### License
