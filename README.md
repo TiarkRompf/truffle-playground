@@ -3,6 +3,11 @@ Truffle Playground
 
 Playing with Truffle in Scala.
 
+Among other things, exploring generation of Truffle ASTs using LMS. See 
+[src/main/scala/TruffleLMS.scala](src/test/scala/TruffleLMSTest.scala) and
+[src/test/scala/TruffleLMSTest.scala](src/test/scala/TruffleLMSTest.scala).
+
+
 ### Background
 
 - [Truffle FAQ and Guidelines](https://wiki.openjdk.java.net/display/Graal/Truffle+FAQ+and+Guidelines#TruffleFAQandGuidelines)
