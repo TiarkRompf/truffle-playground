@@ -175,7 +175,7 @@ class TruffleApiTest extends FunSuite {
     class TestRootNode(
       @(Children @field) children: Array[TestChildNode]
     ) extends RootNode {
-      override def execute(frame: VirtualFrame): Integer = {
+      @ExplodeLoop override def execute(frame: VirtualFrame): Integer = {
         var sum = 0
         var i = 0
         while (i < children.length) {
@@ -204,6 +204,7 @@ class TruffleApiTest extends FunSuite {
     assert(leftChild === iterator.next());
     assert(rightChild === iterator.next());
     assert(!iterator.hasNext());
+
     val result = target.call();
     assert(42 === result);
   }
@@ -234,7 +235,7 @@ class TruffleApiTest extends FunSuite {
     class TestRootNode(
       @(Children @field) children: Array[TestChildNode]
     ) extends RootNode {
-      override def execute(frame: VirtualFrame): Integer = {
+      @ExplodeLoop override def execute(frame: VirtualFrame): Integer = {
         var sum = 0; var i = 0
         while (i < children.length) {
           sum += children(i).execute(); i += 1
@@ -280,7 +281,7 @@ class TruffleApiTest extends FunSuite {
     class TestRootNode(
       @(Children @field) children: Array[ValueNode]
     ) extends RootNode {
-      override def execute(frame: VirtualFrame): Integer = {
+      @ExplodeLoop override def execute(frame: VirtualFrame): Integer = {
         var sum = 0; var i = 0
         while (i < children.length) {
           sum += children(i).execute(); i += 1
@@ -383,7 +384,7 @@ class TruffleApiTest extends FunSuite {
     class TestRootNode(
       @(Children @field) children: Array[TestArgumentNode]
     ) extends RootNode {
-      override def execute(frame: VirtualFrame): Integer = {
+      @ExplodeLoop override def execute(frame: VirtualFrame): Integer = {
         var sum = 0; var i = 0
         while (i < children.length) {
           sum += children(i).execute(frame); i += 1
@@ -401,6 +402,7 @@ class TruffleApiTest extends FunSuite {
     val runtime = Truffle.getRuntime();
     val rootNode = new TestRootNode(Array(new TestArgumentNode(0), new TestArgumentNode(1)));
     val target = runtime.createCallTarget(rootNode);
+
     val result = target.call(new TestArguments(Array(20, 22)));
     assert(42 === result);
   }
