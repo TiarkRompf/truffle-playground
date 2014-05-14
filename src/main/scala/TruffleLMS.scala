@@ -57,7 +57,18 @@ trait Base {
   }
 
   case class Sym[@specialized T:Typ](val slot: FrameSlot) extends Exp[T] {
-    def execute(frame: VirtualFrame): T = frame.getObject(slot).asInstanceOf[T] // TODO: optimize
+    val kind = slot.getKind
+    def execute(frame: VirtualFrame): T = {
+      kind match {
+        case FrameSlotKind.Int =>
+          frame.getInt(slot).asInstanceOf[T]
+        case FrameSlotKind.Boolean =>
+          frame.getBoolean(slot).asInstanceOf[T]
+        //case _ =>
+           // TODO: more cases
+          //frame.getObject(slot).asInstanceOf[T]
+      }
+    }
   }
 
   case class Const[@specialized T:Typ](value: T) extends Exp[T] {
@@ -73,9 +84,22 @@ trait Base {
     def execute(frame: VirtualFrame): Unit
   }
 
+  case class Read[@specialized T:Typ](value: Exp[T]) extends Def[T] {
+    def execute(frame: VirtualFrame): T = value.execute(frame)
+  }
+
   case class Assign[@specialized T:Typ](slot: FrameSlot, @(Child @field) d: Def[T]) extends Stm {
+    val kind = slot.getKind
     def execute(frame: VirtualFrame): Unit = {
-      frame.setObject(slot, d.execute(frame)) // TODO: optimize, dispatch on slotkind
+      kind match {
+        case FrameSlotKind.Int =>
+          frame.setInt(slot, d.execute(frame).asInstanceOf[Int])
+        case FrameSlotKind.Boolean =>
+          frame.setBoolean(slot, d.execute(frame).asInstanceOf[Boolean])
+        //case _ =>
+           // TODO: more cases
+          //frame.setObject(slot, d.execute(frame))
+      }
     }
   }
 
@@ -124,7 +148,7 @@ trait Base {
 
   case class GenericArguments(val values: Array[AnyRef]) extends Arguments
 
-  case class GetArg[T:Typ](index: Int) extends Def[T] {
+  case class GetArg[@specialized T:Typ](index: Int) extends Def[T] {
     def execute(frame: VirtualFrame) = {
       frame.getArguments(classOf[GenericArguments]).values(index).asInstanceOf[T]
     }
@@ -132,10 +156,24 @@ trait Base {
 
   def getArg[T:Typ](index: Int): Exp[T] = reflect(GetArg[T](index))
 
+  // mutable variables
+
+  case class Var[T:Typ](v:Sym[T]) {
+    def apply(): Rep[T] = reflect(Read(v))
+    def update(y:Rep[T]) = {
+      // TODO: avoid low-level access
+      localDefs += Assign(v.slot,Read(y)); v
+    }
+  }
+  def cell[T:Typ](x: Rep[T]) = {
+    Var(createDefinition(fresh,Read(x)))
+  }
+
+
 
   // (optional) root node handling
 
-  class LMSRootNode[T](desc: FrameDescriptor, @(Child @field) val block: Block[T]) extends RootNode(null, desc) {
+  class LMSRootNode[@specialized T](desc: FrameDescriptor, @(Child @field) val block: Block[T]) extends RootNode(null, desc) {
     override def execute(frame: VirtualFrame): AnyRef = block.execute(frame).asInstanceOf[AnyRef]
   }
 
@@ -182,6 +220,39 @@ trait Base {
   }
 
 
+  class NestedArguments(val parentFrame: MaterializedFrame) extends Arguments
+
+  class LMSNestedRootNode[@specialized T](@(Child @field) val block: Block[T]) extends RootNode {
+    override def execute(frame: VirtualFrame): AnyRef = {
+      val parentFrame = frame.getArguments(classOf[NestedArguments]).parentFrame;
+      block.execute(parentFrame.asInstanceOf[VirtualFrame]).asInstanceOf[AnyRef]
+    }
+    override def toString = s"LMSNestedRootNode($block)"
+  }
+
+  case class LMSNestedCallNode[@specialized T](@(Child @field) val target: CallTarget, rootNode: LMSNestedRootNode[T]) extends Def[T] {
+    override def execute(frame: VirtualFrame): T = {
+      if (CompilerDirectives.inInterpreter)
+        target.call(new NestedArguments(frame.materialize)).asInstanceOf[T]
+      else
+        rootNode.block.execute(frame).asInstanceOf[T]
+    }
+    override def toString = s"LMSNestedCallNode($target)"
+  }
+
+
+  def fun[@specialized U:Typ](f: () => Rep[U]) = new (()=>Rep[U]) {
+    val rootNode = new LMSNestedRootNode(reify(f()))
+    val target = runtime.createCallTarget(rootNode)
+
+    override def apply() = {
+      reflect(LMSNestedCallNode(target,rootNode))
+    }
+  }
+
+
+
+
 }
 
 
@@ -189,6 +260,9 @@ trait Primitives extends Base {
 
   implicit object intTyp extends Typ[Int] {
     def slotKind = FrameSlotKind.Int
+  }
+  implicit object boolTyp extends Typ[Boolean] {
+    def slotKind = FrameSlotKind.Boolean
   }
 
   case class IntPlus(@(Child @field) x: Exp[Int], @(Child @field)y: Exp[Int]) extends Def[Int] {
@@ -206,14 +280,65 @@ trait Primitives extends Base {
       x.execute(frame) * y.execute(frame)
     }
   }
+  case class IntDiv(@(Child @field) x: Exp[Int], @(Child @field)y: Exp[Int]) extends Def[Int] {
+    def execute(frame: VirtualFrame) = {
+      x.execute(frame) / y.execute(frame)
+    }
+  }
+  case class IntEqual(@(Child @field) x: Exp[Int], @(Child @field)y: Exp[Int]) extends Def[Boolean] {
+    def execute(frame: VirtualFrame) = {
+      x.execute(frame) == y.execute(frame)
+    }
+  }
+  case class IntLess(@(Child @field) x: Exp[Int], @(Child @field)y: Exp[Int]) extends Def[Boolean] {
+    def execute(frame: VirtualFrame) = {
+      x.execute(frame) < y.execute(frame)
+    }
+  }
 
   implicit class IntOps(x: Exp[Int]) {
     def +(y: Exp[Int]): Exp[Int] = reflect(IntPlus(x,y))
     def -(y: Exp[Int]): Exp[Int] = reflect(IntMinus(x,y))
     def *(y: Exp[Int]): Exp[Int] = reflect(IntTimes(x,y))
+    def /(y: Exp[Int]): Exp[Int] = reflect(IntDiv(x,y))
+    def ===(y: Exp[Int]): Exp[Boolean] = reflect(IntEqual(x,y))
+    def <(y: Exp[Int]): Exp[Boolean] = reflect(IntLess(x,y))
   }
 
 }
 
 
-trait TruffleLMS extends Base with Primitives
+trait ControlFlow extends Primitives with Base {
+
+  case class Loop(shy: Boolean, @(Child @field)body: Block[Boolean]) extends Def[Boolean] {
+    def execute(frame: VirtualFrame): Boolean = {
+      //println(s"interpreted: ${CompilerDirectives.inInterpreter}")
+      //while(body.execute(frame)) {}
+      while ({
+        if (CompilerAsserts.compilationConstant(shy && CompilerDirectives.inInterpreter)) {
+          if (body.execute(frame)) return true else false
+        } else {
+          body.execute(frame)
+        }
+      }) { }
+      false
+    }
+  }
+
+  def loop(body: => Exp[Boolean]): Exp[Boolean] = reflect(Loop(false,reify(body)))
+
+  def loopShy(body: => Exp[Boolean]): Exp[Boolean] = reflect(Loop(true,reify(body)))
+
+  case class IfElse[@specialized T](c: Exp[Boolean], a: Block[T], b: Block[T]) extends Def[T] {
+    def execute(frame: VirtualFrame): T = {
+      if (c.execute(frame)) a.execute(frame) else b.execute(frame)
+    }
+  }
+
+  def cond[T:Typ](c: Exp[Boolean])(a: => Exp[T])(b: => Exp[T]): Exp[T] = {
+    reflect(IfElse(c, reify(a), reify(b)))
+  }
+
+}
+
+trait TruffleLMS extends Base with Primitives with ControlFlow

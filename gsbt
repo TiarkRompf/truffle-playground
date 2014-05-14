@@ -1,3 +1,4 @@
 export JAVA_HOME=~/Downloads/graalvm-jdk1.8.0
+# export SBT_OPTS="-graal -G:+TraceTruffleCompilationDetails -G:TruffleCompilationThreshold=1 -G:+PrintIRWithLIR"
 export SBT_OPTS="-graal -G:+TraceTruffleCompilationDetails -G:TruffleCompilationThreshold=1"
 sbt "$@"
